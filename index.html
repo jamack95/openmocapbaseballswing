@@ -243,7 +243,6 @@
     let startTimeUpper = Date.now();
     let isRecordingUpper = false;
     const maxDataPoints = 100;
-    let lastChartUpdateUpper = 0;
     
     const ctxChartUpper = document.getElementById('chartCanvasUpper').getContext('2d');
     const chartUpper = new Chart(ctxChartUpper, {
@@ -257,7 +256,6 @@
           { label: 'Right Flexion', data: upperRightFlexData, borderColor: 'orange', fill: false, tension: 0.1 },
           { label: 'Right Abduction', data: upperRightAbdData, borderColor: 'purple', fill: false, tension: 0.1 },
           { label: 'Right Rotation', data: upperRightRotData, borderColor: 'brown', fill: false, tension: 0.1 }
-          // Additional metrics (torso/hip rotation) could be added to the chart if desired.
         ]
       },
       options: {
@@ -277,7 +275,6 @@
     let lowerRightAnkleData = [];
     let startTimeLower = Date.now();
     let isRecordingLower = false;
-    let lastChartUpdateLower = 0;
     
     const ctxChartLower = document.getElementById('chartCanvasLower').getContext('2d');
     const chartLower = new Chart(ctxChartLower, {
@@ -331,7 +328,7 @@
       chartUpper.update();
       isRecordingUpper = true;
       startTimeUpper = Date.now();
-      lastChartUpdateUpper = Date.now();
+      // Start capturing from the canvas (30 FPS)
       const stream = canvasElement.captureStream(30);
       mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
       recordedChunks = [];
@@ -407,7 +404,6 @@
       chartLower.update();
       isRecordingLower = true;
       startTimeLower = Date.now();
-      lastChartUpdateLower = Date.now();
       const stream = canvasElement.captureStream(30);
       mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
       recordedChunks = [];
@@ -463,7 +459,7 @@
     pose.onResults((results) => {
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      // Draw the mirrored image (CSS already handles mirror)
+      // Draw the mirrored image (CSS handles mirror)
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
       if (results.poseLandmarks) {
         drawLandmarks(results.poseLandmarks);
@@ -499,37 +495,37 @@
           document.getElementById('upperRightAbd').innerText = 'Right Abduction: ' + rightAbdAngle.toFixed(1) + '°';
           document.getElementById('upperRightRot').innerText = 'Right Rotation: ' + rightRotAngle.toFixed(1) + '°';
         }
-        // Baseball-specific metrics: shoulder & hip lines & torso rotation
+        // Baseball-specific metrics: shoulder & hip lines & torso/hip rotation
         const leftHip = results.poseLandmarks[23];
         const rightHip = results.poseLandmarks[24];
         if (leftShoulder && rightShoulder) {
-          let shoulderLineAngleRaw = computeLineAngle(leftShoulder, rightShoulder);
-          latestUpperMetrics.shoulderLineRaw = shoulderLineAngleRaw;
-          let shoulderLineAngle = baselineShoulder !== null ? shoulderLineAngleRaw - baselineShoulder : shoulderLineAngleRaw;
-          document.getElementById('shoulderLine').innerText = 'Shoulder Line Angle: ' + shoulderLineAngle.toFixed(1) + '°';
-          shoulderLineData.push(shoulderLineAngle);
+          let shoulderLineRaw = computeLineAngle(leftShoulder, rightShoulder);
+          latestUpperMetrics.shoulderLineRaw = shoulderLineRaw;
+          let shoulderLineAdjusted = baselineShoulder !== null ? shoulderLineRaw - baselineShoulder : shoulderLineRaw;
+          document.getElementById('shoulderLine').innerText = 'Shoulder Line Angle: ' + shoulderLineAdjusted.toFixed(1) + '°';
+          shoulderLineData.push(shoulderLineAdjusted);
         }
         if (leftHip && rightHip) {
-          let hipLineAngleRaw = computeLineAngle(leftHip, rightHip);
-          latestUpperMetrics.hipLineRaw = hipLineAngleRaw;
-          let hipLineAngle = baselineHip !== null ? hipLineAngleRaw - baselineHip : hipLineAngleRaw;
-          document.getElementById('hipLine').innerText = 'Hip Line Angle: ' + hipLineAngle.toFixed(1) + '°';
-          hipLineData.push(hipLineAngle);
+          let hipLineRaw = computeLineAngle(leftHip, rightHip);
+          latestUpperMetrics.hipLineRaw = hipLineRaw;
+          let hipLineAdjusted = baselineHip !== null ? hipLineRaw - baselineHip : hipLineRaw;
+          document.getElementById('hipLine').innerText = 'Hip Line Angle: ' + hipLineAdjusted.toFixed(1) + '°';
+          hipLineData.push(hipLineAdjusted);
         }
         // Compute torso rotation from midpoints
         if (leftShoulder && rightShoulder && leftHip && rightHip) {
           const shouldersMid = { x: (leftShoulder.x + rightShoulder.x) / 2, y: (leftShoulder.y + rightShoulder.y) / 2 };
           const hipsMid = { x: (leftHip.x + rightHip.x) / 2, y: (leftHip.y + rightHip.y) / 2 };
-          let torsoAngleRaw = computeLineAngle(hipsMid, shouldersMid);
-          latestUpperMetrics.torsoRaw = torsoAngleRaw;
-          let torsoRotation = baselineTorso !== null ? Math.abs(torsoAngleRaw - baselineTorso) : Math.abs(torsoAngleRaw);
+          let torsoRaw = computeLineAngle(hipsMid, shouldersMid);
+          latestUpperMetrics.torsoRaw = torsoRaw;
+          let torsoRotation = baselineTorso !== null ? Math.abs(torsoRaw - baselineTorso) : Math.abs(torsoRaw);
           document.getElementById('torsoRotation').innerText = 'Torso Rotation: ' + torsoRotation.toFixed(1) + '°';
           torsoRotationData.push(torsoRotation);
-          // Also, for hip rotation metric, adjust the hip line angle to display absolute rotation.
-          let hipRotation = baselineHip !== null ? Math.abs(hipLineAngleRaw - baselineHip) : Math.abs(hipLineAngleRaw);
+          // For hip rotation metric, use the absolute adjusted hip line angle:
+          let hipRotation = baselineHip !== null ? Math.abs(hipLineRaw - baselineHip) : Math.abs(hipLineRaw);
           document.getElementById('hipRotation').innerText = 'Hip Rotation: ' + hipRotation.toFixed(1) + '°';
           hipRotationData.push(hipRotation);
-          // Additionally, update hip-shoulder separation (as before)
+          // Hip-shoulder separation remains as the difference between adjusted shoulder and hip angles:
           if (latestUpperMetrics.shoulderLineRaw !== null && latestUpperMetrics.hipLineRaw !== null) {
             const separation = Math.abs((baselineShoulder !== null ? (latestUpperMetrics.shoulderLineRaw - baselineShoulder) : latestUpperMetrics.shoulderLineRaw) -
                                          (baselineHip !== null ? (latestUpperMetrics.hipLineRaw - baselineHip) : latestUpperMetrics.hipLineRaw));
@@ -561,10 +557,6 @@
             hipShoulderSeparationData.shift();
             torsoRotationData.shift();
             hipRotationData.shift();
-          }
-          if (Date.now() - lastChartUpdateUpper > 500) {
-            chartUpper.update();
-            lastChartUpdateUpper = Date.now();
           }
         }
         
@@ -611,14 +603,20 @@
             lowerRightKneeData.shift();
             lowerRightAnkleData.shift();
           }
-          if (Date.now() - lastChartUpdateLower > 500) {
-            chartLower.update();
-            lastChartUpdateLower = Date.now();
-          }
         }
       }
       canvasCtx.restore();
     });
+    
+    // --- Chart Updates: Use separate interval timers to update charts every 500ms ---
+    setInterval(() => {
+      chartUpper.update();
+    }, 500);
+    
+    setInterval(() => {
+      chartLower.update();
+    }, 500);
   </script>
 </body>
 </html>
+
