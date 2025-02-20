@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Simple Baseball Swing Metrics</title>
+  <title>Baseball Swing Torso Rotation Tracker</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -16,11 +16,11 @@
       margin: auto;
       width: 640px;
     }
-    /* Hide the raw video element; we use it as input for MediaPipe */
+    /* The raw video element is hidden */
     #input_video {
       display: none;
     }
-    /* Canvas displays the annotated (mirrored) output */
+    /* The canvas displays the mirrored output */
     #output_canvas {
       width: 640px;
       height: 480px;
@@ -34,9 +34,6 @@
       font-size: 20px;
       margin-top: 20px;
     }
-    .metrics div {
-      margin: 10px 0;
-    }
     button {
       padding: 10px 15px;
       font-size: 16px;
@@ -45,7 +42,7 @@
   </style>
 </head>
 <body>
-  <h1>Baseball Swing: Shoulder & Hip Metrics</h1>
+  <h1>Baseball Swing Torso Rotation Tracker</h1>
   
   <div id="videoContainer">
     <video id="input_video" autoplay playsinline></video>
@@ -53,9 +50,7 @@
   </div>
   
   <div class="metrics">
-    <div id="shoulderLine">Shoulder Line Angle: --°</div>
-    <div id="hipLine">Hip Line Angle: --°</div>
-    <div id="hipShoulderSeparation">Hip-Shoulder Separation: --°</div>
+    <div id="torsoRotation">Torso Rotation: --°</div>
   </div>
   
   <button id="calibrate">Calibrate Baseline</button>
@@ -65,21 +60,15 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   
   <script>
-    // Global baseline variables
+    // Global baseline for shoulder line angle (used as the torso rotation baseline)
     let baselineShoulder = null;
-    let baselineHip = null;
-    
-    // Latest raw metrics for calibration
+    // Latest raw shoulder line angle from the current frame
     let latestShoulderLine = null;
-    let latestHipLine = null;
     
-    // Get elements
     const videoElement = document.getElementById('input_video');
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
-    const shoulderLineDiv = document.getElementById('shoulderLine');
-    const hipLineDiv = document.getElementById('hipLine');
-    const hipShoulderSeparationDiv = document.getElementById('hipShoulderSeparation');
+    const torsoRotationDiv = document.getElementById('torsoRotation');
     const calibrateBtn = document.getElementById('calibrate');
     
     // Set up MediaPipe Pose
@@ -94,7 +83,7 @@
     });
     pose.onResults(onResults);
     
-    // Start the camera
+    // Start the camera via MediaPipe's Camera Utils
     const camera = new Camera(videoElement, {
       onFrame: async () => { await pose.send({ image: videoElement }); },
       width: 640,
@@ -102,77 +91,55 @@
     });
     camera.start();
     
-    // Utility: compute the line angle in degrees relative to horizontal
+    // Utility function: compute the line angle (in degrees) relative to horizontal
     function computeLineAngle(A, B) {
       return Math.atan2(B.y - A.y, B.x - A.x) * (180 / Math.PI);
     }
     
-    // Optional: draw landmarks for debugging (small red dots)
-    function drawLandmarks(landmarks) {
-      landmarks.forEach((landmark, index) => {
-        if (index < 11) return; // Skip face landmarks
-        const x = landmark.x * canvasElement.width;
-        const y = landmark.y * canvasElement.height;
-        canvasCtx.beginPath();
-        canvasCtx.arc(x, y, 2, 0, 2 * Math.PI);
-        canvasCtx.fillStyle = 'red';
-        canvasCtx.fill();
-      });
-    }
-    
-    // onResults callback: compute and display metrics
+    // onResults callback: compute torso rotation from the shoulder line
     function onResults(results) {
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      // Draw mirrored image (CSS handles mirror)
+      // Draw the mirrored image (CSS handles mirror)
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
       
       if (results.poseLandmarks) {
-        // Optionally draw landmarks for debugging
-        drawLandmarks(results.poseLandmarks);
+        // Optionally draw landmarks (for debugging)
+        results.poseLandmarks.forEach((landmark, index) => {
+          if (index < 11) return; // Skip face landmarks
+          const x = landmark.x * canvasElement.width;
+          const y = landmark.y * canvasElement.height;
+          canvasCtx.beginPath();
+          canvasCtx.arc(x, y, 2, 0, 2 * Math.PI);
+          canvasCtx.fillStyle = 'red';
+          canvasCtx.fill();
+        });
         
-        // Extract landmarks for shoulders and hips
+        // Extract shoulder landmarks (indexes 11 and 12)
         const leftShoulder = results.poseLandmarks[11];
         const rightShoulder = results.poseLandmarks[12];
-        const leftHip = results.poseLandmarks[23];
-        const rightHip = results.poseLandmarks[24];
-        
-        // Compute shoulder line (left to right shoulder)
         if (leftShoulder && rightShoulder) {
-          let shoulderLineRaw = computeLineAngle(leftShoulder, rightShoulder);
-          latestShoulderLine = shoulderLineRaw;
-          let shoulderLineAdjusted = baselineShoulder !== null ? shoulderLineRaw - baselineShoulder : shoulderLineRaw;
-          shoulderLineDiv.innerText = "Shoulder Line Angle: " + shoulderLineAdjusted.toFixed(1) + "°";
-        }
-        
-        // Compute hip line (left to right hip)
-        if (leftHip && rightHip) {
-          let hipLineRaw = computeLineAngle(leftHip, rightHip);
-          latestHipLine = hipLineRaw;
-          let hipLineAdjusted = baselineHip !== null ? hipLineRaw - baselineHip : hipLineRaw;
-          hipLineDiv.innerText = "Hip Line Angle: " + hipLineAdjusted.toFixed(1) + "°";
-        }
-        
-        // Compute hip-shoulder separation: difference between adjusted shoulder and hip angles
-        if (latestShoulderLine !== null && latestHipLine !== null) {
-          let shoulderAdjusted = baselineShoulder !== null ? latestShoulderLine - baselineShoulder : latestShoulderLine;
-          let hipAdjusted = baselineHip !== null ? latestHipLine - baselineHip : latestHipLine;
-          let separation = Math.abs(shoulderAdjusted - hipAdjusted);
-          hipShoulderSeparationDiv.innerText = "Hip-Shoulder Separation: " + separation.toFixed(1) + "°";
+          // Compute the raw shoulder line angle
+          let rawAngle = computeLineAngle(leftShoulder, rightShoulder);
+          latestShoulderLine = rawAngle;
+          // If baseline is set, compute the absolute difference; else use raw absolute value
+          let rotation = baselineShoulder !== null ? Math.abs(rawAngle - baselineShoulder) : Math.abs(rawAngle);
+          // Cap the rotation value at 90 degrees
+          rotation = Math.min(rotation, 90);
+          torsoRotationDiv.innerText = "Torso Rotation: " + rotation.toFixed(1) + "°";
         }
       }
       
       canvasCtx.restore();
     }
     
-    // Calibration button: record current raw values as baseline
+    // Calibration button: when pressed, store the current raw shoulder line as baseline
     calibrateBtn.addEventListener('click', () => {
-      if (latestShoulderLine !== null && latestHipLine !== null) {
+      if (latestShoulderLine !== null) {
         baselineShoulder = latestShoulderLine;
-        baselineHip = latestHipLine;
-        alert("Calibration complete. Baseline recorded.");
+        alert("Calibration complete. Baseline set so that front-facing equals 0° torso rotation.");
       } else {
-        alert("Calibration failed. Ensure full body is visible.");
+        alert("Calibration failed. Ensure shoulders are visible.");
       }
     });
   </script>
