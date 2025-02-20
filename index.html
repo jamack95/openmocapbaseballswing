@@ -30,7 +30,7 @@
     #input_video {
       display: none;
     }
-    /* Canvas for drawing the annotated video */
+    /* Canvas for drawing the annotated video; mirror the canvas */
     #output_canvas {
       width: 640px;
       height: 480px;
@@ -38,6 +38,7 @@
       border-radius: 8px;
       background: #000;
       margin-bottom: 20px;
+      transform: scaleX(-1);
     }
     /* Section styling */
     .section {
@@ -222,7 +223,6 @@
           { label: 'Right Flexion', data: upperRightFlexData, borderColor: 'orange', fill: false, tension: 0.1 },
           { label: 'Right Abduction', data: upperRightAbdData, borderColor: 'purple', fill: false, tension: 0.1 },
           { label: 'Right Rotation', data: upperRightRotData, borderColor: 'brown', fill: false, tension: 0.1 }
-          // Baseball-specific metrics can be added if desired.
         ]
       },
       options: {
@@ -560,3 +560,4 @@
   </script>
 </body>
 </html>
+
