@@ -179,7 +179,6 @@
     }
     
     function computeLineAngle(A, B) {
-      // Returns angle (in degrees) of the line from A to B relative to horizontal.
       return Math.atan2(B.y - A.y, B.x - A.x) * (180 / Math.PI);
     }
     
@@ -203,13 +202,13 @@
     let upperRightFlexData = [];
     let upperRightAbdData = [];
     let upperRightRotData = [];
-    // Baseball-specific: additional metrics
     let shoulderLineData = [];
     let hipLineData = [];
     let hipShoulderSeparationData = [];
     let startTimeUpper = Date.now();
     let isRecordingUpper = false;
     const maxDataPoints = 100;
+    let lastChartUpdateUpper = 0;
     
     const ctxChartUpper = document.getElementById('chartCanvasUpper').getContext('2d');
     const chartUpper = new Chart(ctxChartUpper, {
@@ -222,11 +221,8 @@
           { label: 'Left Rotation', data: upperLeftRotData, borderColor: 'green', fill: false, tension: 0.1 },
           { label: 'Right Flexion', data: upperRightFlexData, borderColor: 'orange', fill: false, tension: 0.1 },
           { label: 'Right Abduction', data: upperRightAbdData, borderColor: 'purple', fill: false, tension: 0.1 },
-          { label: 'Right Rotation', data: upperRightRotData, borderColor: 'brown', fill: false, tension: 0.1 },
-          // Optionally, you could add the baseball-specific metrics to the chart.
-          // { label: 'Shoulder Line', data: shoulderLineData, borderColor: 'magenta', fill: false, tension: 0.1 },
-          // { label: 'Hip Line', data: hipLineData, borderColor: 'cyan', fill: false, tension: 0.1 },
-          // { label: 'Hip-Shoulder Sep.', data: hipShoulderSeparationData, borderColor: 'black', fill: false, tension: 0.1 }
+          { label: 'Right Rotation', data: upperRightRotData, borderColor: 'brown', fill: false, tension: 0.1 }
+          // Baseball-specific metrics can be added if desired.
         ]
       },
       options: {
@@ -246,6 +242,7 @@
     let lowerRightAnkleData = [];
     let startTimeLower = Date.now();
     let isRecordingLower = false;
+    let lastChartUpdateLower = 0;
     
     const ctxChartLower = document.getElementById('chartCanvasLower').getContext('2d');
     const chartLower = new Chart(ctxChartLower, {
@@ -297,7 +294,7 @@
       chartUpper.update();
       isRecordingUpper = true;
       startTimeUpper = Date.now();
-      // Start capturing from the canvas (30 FPS)
+      lastChartUpdateUpper = Date.now();
       const stream = canvasElement.captureStream(30);
       mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
       recordedChunks = [];
@@ -371,6 +368,7 @@
       chartLower.update();
       isRecordingLower = true;
       startTimeLower = Date.now();
+      lastChartUpdateLower = Date.now();
       const stream = canvasElement.captureStream(30);
       mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
       recordedChunks = [];
@@ -461,7 +459,7 @@
           document.getElementById('upperRightAbd').innerText = 'Right Abduction: ' + rightAbdAngle.toFixed(1) + '°';
           document.getElementById('upperRightRot').innerText = 'Right Rotation: ' + rightRotAngle.toFixed(1) + '°';
         }
-        // Baseball-specific metrics: Shoulder & Hip Lines
+        // Baseball-specific metrics
         const leftHip = results.poseLandmarks[23];
         const rightHip = results.poseLandmarks[24];
         if (leftShoulder && rightShoulder) {
@@ -474,7 +472,7 @@
           document.getElementById('hipLine').innerText = 'Hip Line Angle: ' + hipLineAngle.toFixed(1) + '°';
           hipLineData.push(hipLineAngle);
           if (leftShoulder && rightShoulder) {
-            const separation = Math.abs(shoulderLineAngle - hipLineAngle);
+            const separation = Math.abs(computeLineAngle(leftShoulder, rightShoulder) - hipLineAngle);
             document.getElementById('hipShoulderSeparation').innerText = 'Hip-Shoulder Separation: ' + separation.toFixed(1) + '°';
             hipShoulderSeparationData.push(separation);
           }
@@ -502,7 +500,10 @@
             hipLineData.shift();
             hipShoulderSeparationData.shift();
           }
-          chartUpper.update();
+          if (Date.now() - lastChartUpdateUpper > 500) {
+            chartUpper.update();
+            lastChartUpdateUpper = Date.now();
+          }
         }
         
         // --- Lower Body Calculations ---
@@ -548,7 +549,10 @@
             lowerRightKneeData.shift();
             lowerRightAnkleData.shift();
           }
-          chartLower.update();
+          if (Date.now() - lastChartUpdateLower > 500) {
+            chartLower.update();
+            lastChartUpdateLower = Date.now();
+          }
         }
       }
       canvasCtx.restore();
