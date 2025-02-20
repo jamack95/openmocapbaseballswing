@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mobility Tracker – Baseball Swing Edition</title>
+  <title>Simple Baseball Swing Metrics</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -11,159 +11,75 @@
       text-align: center;
       padding: 20px;
     }
-    /* Tab switcher */
-    #tabSwitcher {
-      margin-bottom: 20px;
-    }
-    #tabSwitcher button {
-      margin: 0 10px;
-      padding: 10px 20px;
-      font-size: 16px;
-    }
-    /* Common video container */
     #videoContainer {
       position: relative;
+      margin: auto;
       width: 640px;
-      margin: 0 auto 20px;
     }
-    /* Hidden video element (used by MediaPipe) */
+    /* Hide the raw video element; we use it as input for MediaPipe */
     #input_video {
       display: none;
     }
-    /* Canvas for drawing the annotated video; mirror the canvas */
+    /* Canvas displays the annotated (mirrored) output */
     #output_canvas {
       width: 640px;
       height: 480px;
       border: 2px solid #333;
       border-radius: 8px;
       background: #000;
-      margin-bottom: 20px;
       transform: scaleX(-1);
+      margin-bottom: 20px;
     }
-    /* Section styling */
-    .section {
-      width: 640px;
-      margin: 0 auto;
+    .metrics {
+      font-size: 20px;
+      margin-top: 20px;
     }
-    .measurements {
-      font-size: 18px;
-      margin-bottom: 10px;
+    .metrics div {
+      margin: 10px 0;
     }
-    .measurements div {
-      margin: 5px 0;
-    }
-    .chartContainer {
-      margin: 20px 0;
-    }
-    .controls {
-      margin: 20px 0;
-    }
-    .controls button {
-      margin: 5px;
-      padding: 8px 12px;
+    button {
+      padding: 10px 15px;
       font-size: 16px;
+      margin: 10px;
     }
   </style>
 </head>
 <body>
-  <h1>Mobility Tracker – Baseball Swing Edition</h1>
-  
-  <!-- Tab switcher -->
-  <div id="tabSwitcher">
-    <button id="upperTabBtn">Upper Body</button>
-    <button id="lowerTabBtn">Lower Body</button>
-  </div>
-  
-  <!-- Common video and canvas container -->
+  <h1>Simple Baseball Swing Metrics</h1>
   <div id="videoContainer">
     <video id="input_video" autoplay playsinline></video>
     <canvas id="output_canvas"></canvas>
   </div>
-  
-  <!-- Upper Body Section -->
-  <div id="upperSection" class="section">
-    <h2>Upper Body Mobility</h2>
-    <div class="measurements">
-      <div id="upperLeftFlex">Left Flexion: --°</div>
-      <div id="upperLeftAbd">Left Abduction: --°</div>
-      <div id="upperLeftRot">Left Rotation: --°</div>
-      <div id="upperRightFlex">Right Flexion: --°</div>
-      <div id="upperRightAbd">Right Abduction: --°</div>
-      <div id="upperRightRot">Right Rotation: --°</div>
-      <!-- Baseball-specific metrics -->
-      <div id="shoulderLine">Shoulder Line Angle: --°</div>
-      <div id="hipLine">Hip Line Angle: --°</div>
-      <div id="hipShoulderSeparation">Hip-Shoulder Separation: --°</div>
-    </div>
-    <div class="controls">
-      <!-- Calibration button to set baseline for shoulder & hip lines -->
-      <button id="calibrate">Calibrate Baseline</button>
-    </div>
-    <div class="chartContainer">
-      <canvas id="chartCanvasUpper" width="640" height="300"></canvas>
-    </div>
-    <div class="controls">
-      <button id="startRecordingUpper">Start Recording</button>
-      <button id="stopRecordingUpper" disabled>Stop Recording</button>
-      <button id="downloadGraphUpper">Download Graph</button>
-      <button id="downloadCSVUpper">Download CSV</button>
-    </div>
+  <div class="metrics">
+    <div id="shoulderLine">Shoulder Line Angle: --°</div>
+    <div id="hipLine">Hip Line Angle: --°</div>
+    <div id="hipShoulderSeparation">Hip-Shoulder Separation: --°</div>
   </div>
-  
-  <!-- Lower Body Section -->
-  <div id="lowerSection" class="section" style="display:none;">
-    <h2>Lower Body Mobility</h2>
-    <div class="measurements">
-      <div id="lowerLeftKnee">Left Knee: --°</div>
-      <div id="lowerLeftAnkle">Left Ankle: --°</div>
-      <div id="lowerRightKnee">Right Knee: --°</div>
-      <div id="lowerRightAnkle">Right Ankle: --°</div>
-    </div>
-    <div class="chartContainer">
-      <canvas id="chartCanvasLower" width="640" height="300"></canvas>
-    </div>
-    <div class="controls">
-      <button id="startRecordingLower">Start Recording</button>
-      <button id="stopRecordingLower" disabled>Stop Recording</button>
-      <button id="downloadGraphLower">Download Graph</button>
-      <button id="downloadCSVLower">Download CSV</button>
-    </div>
-  </div>
+  <button id="calibrate">Calibrate Baseline</button>
   
   <!-- External Libraries -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   
   <script>
-    // --- Global Calibration Baselines ---
+    // Global baseline variables for calibration
     let baselineShoulder = null;
     let baselineHip = null;
     
-    // Object to store latest raw upper metrics for calibration
-    let latestUpperMetrics = {
-      shoulderLineRaw: null,
-      hipLineRaw: null
-    };
+    // Latest raw values for current frame (for calibration)
+    let latestShoulderLineRaw = null;
+    let latestHipLineRaw = null;
     
-    // --- Tab Switching ---
-    const upperSection = document.getElementById('upperSection');
-    const lowerSection = document.getElementById('lowerSection');
-    document.getElementById('upperTabBtn').addEventListener('click', () => {
-      upperSection.style.display = 'block';
-      lowerSection.style.display = 'none';
-    });
-    document.getElementById('lowerTabBtn').addEventListener('click', () => {
-      upperSection.style.display = 'none';
-      lowerSection.style.display = 'block';
-    });
-    
-    // --- Common Video & Canvas Setup ---
+    // Get elements
     const videoElement = document.getElementById('input_video');
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
+    const shoulderLineDiv = document.getElementById('shoulderLine');
+    const hipLineDiv = document.getElementById('hipLine');
+    const hipShoulderSeparationDiv = document.getElementById('hipShoulderSeparation');
+    const calibrateBtn = document.getElementById('calibrate');
     
-    // --- MediaPipe Pose Setup ---
+    // Set up MediaPipe Pose
     const pose = new Pose({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
     });
@@ -183,410 +99,80 @@
     });
     camera.start();
     
-    // --- Utility Functions ---
-    function calculateAngle(A, B, C) {
-      const AB = { x: A.x - B.x, y: A.y - B.y };
-      const CB = { x: C.x - B.x, y: C.y - B.y };
-      const dot = AB.x * CB.x + AB.y * CB.y;
-      const magAB = Math.sqrt(AB.x * AB.x + AB.y * AB.y);
-      const magCB = Math.sqrt(CB.x * CB.x + CB.y * CB.y);
-      const angleRad = Math.acos(dot / (magAB * magCB));
-      return angleRad * (180 / Math.PI);
-    }
-    
-    // Compute the line angle (in degrees) relative to horizontal
+    // Utility: Compute the line angle (in degrees) relative to horizontal
     function computeLineAngle(A, B) {
       return Math.atan2(B.y - A.y, B.x - A.x) * (180 / Math.PI);
     }
     
+    // Optional: Draw small red dots for landmarks (skipping face landmarks)
     function drawLandmarks(landmarks) {
       landmarks.forEach((landmark, index) => {
-        if (index < 11) return; // Skip face landmarks
+        if (index < 11) return;
         const x = landmark.x * canvasElement.width;
         const y = landmark.y * canvasElement.height;
         canvasCtx.beginPath();
-        canvasCtx.arc(x, y, 3, 0, 2 * Math.PI);
+        canvasCtx.arc(x, y, 2, 0, 2 * Math.PI);
         canvasCtx.fillStyle = 'red';
         canvasCtx.fill();
       });
     }
     
-    // --- Calibration Button ---
-    document.getElementById('calibrate').addEventListener('click', () => {
-      if (latestUpperMetrics.shoulderLineRaw !== null && latestUpperMetrics.hipLineRaw !== null) {
-        baselineShoulder = latestUpperMetrics.shoulderLineRaw;
-        baselineHip = latestUpperMetrics.hipLineRaw;
-        alert("Calibration complete. Baseline recorded for shoulders and hips.");
-      } else {
-        alert("Calibration failed. Ensure shoulders and hips are visible.");
-      }
-    });
-    
-    // --- Data Logging & Chart Setup for Upper Body ---
-    let timeLabelsUpper = [];
-    let upperLeftFlexData = [];
-    let upperLeftAbdData = [];
-    let upperLeftRotData = [];
-    let upperRightFlexData = [];
-    let upperRightAbdData = [];
-    let upperRightRotData = [];
-    let shoulderLineData = [];
-    let hipLineData = [];
-    let hipShoulderSeparationData = [];
-    let startTimeUpper = Date.now();
-    let isRecordingUpper = false;
-    const maxDataPoints = 100;
-    let lastChartUpdateUpper = 0;
-    
-    const ctxChartUpper = document.getElementById('chartCanvasUpper').getContext('2d');
-    const chartUpper = new Chart(ctxChartUpper, {
-      type: 'line',
-      data: {
-        labels: timeLabelsUpper,
-        datasets: [
-          { label: 'Left Flexion', data: upperLeftFlexData, borderColor: 'red', fill: false, tension: 0.1 },
-          { label: 'Left Abduction', data: upperLeftAbdData, borderColor: 'blue', fill: false, tension: 0.1 },
-          { label: 'Left Rotation', data: upperLeftRotData, borderColor: 'green', fill: false, tension: 0.1 },
-          { label: 'Right Flexion', data: upperRightFlexData, borderColor: 'orange', fill: false, tension: 0.1 },
-          { label: 'Right Abduction', data: upperRightAbdData, borderColor: 'purple', fill: false, tension: 0.1 },
-          { label: 'Right Rotation', data: upperRightRotData, borderColor: 'brown', fill: false, tension: 0.1 }
-        ]
-      },
-      options: {
-        animation: false,
-        scales: {
-          x: { title: { display: true, text: 'Time (s)' } },
-          y: { title: { display: true, text: 'Angle (°)' } }
-        }
-      }
-    });
-    
-    // --- Data Logging & Chart Setup for Lower Body ---
-    let timeLabelsLower = [];
-    let lowerLeftKneeData = [];
-    let lowerLeftAnkleData = [];
-    let lowerRightKneeData = [];
-    let lowerRightAnkleData = [];
-    let startTimeLower = Date.now();
-    let isRecordingLower = false;
-    let lastChartUpdateLower = 0;
-    
-    const ctxChartLower = document.getElementById('chartCanvasLower').getContext('2d');
-    const chartLower = new Chart(ctxChartLower, {
-      type: 'line',
-      data: {
-        labels: timeLabelsLower,
-        datasets: [
-          { label: 'Left Knee', data: lowerLeftKneeData, borderColor: 'red', fill: false, tension: 0.1 },
-          { label: 'Left Ankle', data: lowerLeftAnkleData, borderColor: 'blue', fill: false, tension: 0.1 },
-          { label: 'Right Knee', data: lowerRightKneeData, borderColor: 'orange', fill: false, tension: 0.1 },
-          { label: 'Right Ankle', data: lowerRightAnkleData, borderColor: 'purple', fill: false, tension: 0.1 }
-        ]
-      },
-      options: {
-        animation: false,
-        scales: {
-          x: { title: { display: true, text: 'Time (s)' } },
-          y: { title: { display: true, text: 'Angle (°)' } }
-        }
-      }
-    });
-    
-    // --- MediaRecorder Setup (Common) ---
-    let mediaRecorder = null;
-    let recordedChunks = [];
-    
-    // --- Upper Body Controls ---
-    const startRecordingUpperBtn = document.getElementById('startRecordingUpper');
-    const stopRecordingUpperBtn = document.getElementById('stopRecordingUpper');
-    startRecordingUpperBtn.addEventListener('click', () => {
-      // Clear previous data
-      timeLabelsUpper = [];
-      upperLeftFlexData = [];
-      upperLeftAbdData = [];
-      upperLeftRotData = [];
-      upperRightFlexData = [];
-      upperRightAbdData = [];
-      upperRightRotData = [];
-      shoulderLineData = [];
-      hipLineData = [];
-      hipShoulderSeparationData = [];
-      chartUpper.data.labels = timeLabelsUpper;
-      chartUpper.data.datasets[0].data = upperLeftFlexData;
-      chartUpper.data.datasets[1].data = upperLeftAbdData;
-      chartUpper.data.datasets[2].data = upperLeftRotData;
-      chartUpper.data.datasets[3].data = upperRightFlexData;
-      chartUpper.data.datasets[4].data = upperRightAbdData;
-      chartUpper.data.datasets[5].data = upperRightRotData;
-      chartUpper.update();
-      isRecordingUpper = true;
-      startTimeUpper = Date.now();
-      lastChartUpdateUpper = Date.now();
-      const stream = canvasElement.captureStream(30);
-      mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-      recordedChunks = [];
-      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(recordedChunks, { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        a.download = 'upper_body_recording.webm';
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-      };
-      mediaRecorder.start();
-      startRecordingUpperBtn.disabled = true;
-      stopRecordingUpperBtn.disabled = false;
-    });
-    stopRecordingUpperBtn.addEventListener('click', () => {
-      if (mediaRecorder) mediaRecorder.stop();
-      isRecordingUpper = false;
-      startRecordingUpperBtn.disabled = false;
-      stopRecordingUpperBtn.disabled = true;
-    });
-    document.getElementById('downloadGraphUpper').addEventListener('click', () => {
-      const imageURL = chartUpper.toBase64Image();
-      const a = document.createElement('a');
-      a.href = imageURL;
-      a.download = 'upper_body_graph.png';
-      a.click();
-    });
-    document.getElementById('downloadCSVUpper').addEventListener('click', () => {
-      let csvContent = "data:text/csv;charset=utf-8,Time,Left Flexion,Left Abduction,Left Rotation,Right Flexion,Right Abduction,Right Rotation,Shoulder Line,Hip Line,Hip-Shoulder Separation\n";
-      for (let i = 0; i < timeLabelsUpper.length; i++) {
-        const row = [
-          timeLabelsUpper[i],
-          upperLeftFlexData[i],
-          upperLeftAbdData[i],
-          upperLeftRotData[i],
-          upperRightFlexData[i],
-          upperRightAbdData[i],
-          upperRightRotData[i],
-          shoulderLineData[i] || "",
-          hipLineData[i] || "",
-          hipShoulderSeparationData[i] || ""
-        ];
-        csvContent += row.join(",") + "\n";
-      }
-      const encodedUri = encodeURI(csvContent);
-      const a = document.createElement('a');
-      a.href = encodedUri;
-      a.download = "upper_body_data.csv";
-      a.click();
-    });
-    
-    // --- Lower Body Controls ---
-    const startRecordingLowerBtn = document.getElementById('startRecordingLower');
-    const stopRecordingLowerBtn = document.getElementById('stopRecordingLower');
-    startRecordingLowerBtn.addEventListener('click', () => {
-      timeLabelsLower = [];
-      lowerLeftKneeData = [];
-      lowerLeftAnkleData = [];
-      lowerRightKneeData = [];
-      lowerRightAnkleData = [];
-      chartLower.data.labels = timeLabelsLower;
-      chartLower.data.datasets[0].data = lowerLeftKneeData;
-      chartLower.data.datasets[1].data = lowerLeftAnkleData;
-      chartLower.data.datasets[2].data = lowerRightKneeData;
-      chartLower.data.datasets[3].data = lowerRightAnkleData;
-      chartLower.update();
-      isRecordingLower = true;
-      startTimeLower = Date.now();
-      lastChartUpdateLower = Date.now();
-      const stream = canvasElement.captureStream(30);
-      mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-      recordedChunks = [];
-      mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(recordedChunks, { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        a.download = 'lower_body_recording.webm';
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
-      };
-      mediaRecorder.start();
-      startRecordingLowerBtn.disabled = true;
-      stopRecordingLowerBtn.disabled = false;
-    });
-    stopRecordingLowerBtn.addEventListener('click', () => {
-      if (mediaRecorder) mediaRecorder.stop();
-      isRecordingLower = false;
-      startRecordingLowerBtn.disabled = false;
-      stopRecordingLowerBtn.disabled = true;
-    });
-    document.getElementById('downloadGraphLower').addEventListener('click', () => {
-      const imageURL = chartLower.toBase64Image();
-      const a = document.createElement('a');
-      a.href = imageURL;
-      a.download = 'lower_body_graph.png';
-      a.click();
-    });
-    document.getElementById('downloadCSVLower').addEventListener('click', () => {
-      let csvContent = "data:text/csv;charset=utf-8,Time,Left Knee,Left Ankle,Right Knee,Right Ankle\n";
-      for (let i = 0; i < timeLabelsLower.length; i++) {
-        const row = [
-          timeLabelsLower[i],
-          lowerLeftKneeData[i],
-          lowerLeftAnkleData[i],
-          lowerRightKneeData[i],
-          lowerRightAnkleData[i]
-        ];
-        csvContent += row.join(",") + "\n";
-      }
-      const encodedUri = encodeURI(csvContent);
-      const a = document.createElement('a');
-      a.href = encodedUri;
-      a.download = "lower_body_data.csv";
-      a.click();
-    });
-    
-    // --- onResults Callback ---
-    pose.onResults((results) => {
+    // onResults callback: compute and display metrics
+    function onResults(results) {
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      // Draw the mirrored image (CSS handles mirror)
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+      
       if (results.poseLandmarks) {
         drawLandmarks(results.poseLandmarks);
         
-        // --- Upper Body Calculations ---
+        // Extract shoulder and hip landmarks
         const leftShoulder = results.poseLandmarks[11];
-        const leftElbow = results.poseLandmarks[13];
-        const leftWrist = results.poseLandmarks[15];
-        let leftFlexAngle = null, leftAbdAngle = null, leftRotAngle = null;
-        if (leftShoulder && leftElbow && leftWrist) {
-          const verticalRefL = { x: leftShoulder.x, y: leftShoulder.y + 0.1 };
-          leftFlexAngle = calculateAngle(verticalRefL, leftShoulder, leftElbow);
-          const diffXLeft = Math.abs(leftElbow.x - leftShoulder.x);
-          const diffYLeft = Math.abs(leftElbow.y - leftShoulder.y);
-          leftAbdAngle = Math.atan(diffXLeft / diffYLeft) * (180 / Math.PI);
-          // Shoulder rotation as before: using the difference between wrist and elbow x-coordinates
-          leftRotAngle = (leftWrist.x - leftElbow.x) * 100;
-          document.getElementById('upperLeftFlex').innerText = 'Left Flexion: ' + leftFlexAngle.toFixed(1) + '°';
-          document.getElementById('upperLeftAbd').innerText = 'Left Abduction: ' + leftAbdAngle.toFixed(1) + '°';
-          document.getElementById('upperLeftRot').innerText = 'Left Rotation: ' + leftRotAngle.toFixed(1) + '°';
-        }
         const rightShoulder = results.poseLandmarks[12];
-        const rightElbow = results.poseLandmarks[14];
-        const rightWrist = results.poseLandmarks[16];
-        let rightFlexAngle = null, rightAbdAngle = null, rightRotAngle = null;
-        if (rightShoulder && rightElbow && rightWrist) {
-          const verticalRefR = { x: rightShoulder.x, y: rightShoulder.y + 0.1 };
-          rightFlexAngle = calculateAngle(verticalRefR, rightShoulder, rightElbow);
-          const diffXRight = Math.abs(rightElbow.x - rightShoulder.x);
-          const diffYRight = Math.abs(rightElbow.y - rightShoulder.y);
-          rightAbdAngle = Math.atan(diffXRight / diffYRight) * (180 / Math.PI);
-          rightRotAngle = (rightElbow.x - rightWrist.x) * 100;
-          document.getElementById('upperRightFlex').innerText = 'Right Flexion: ' + rightFlexAngle.toFixed(1) + '°';
-          document.getElementById('upperRightAbd').innerText = 'Right Abduction: ' + rightAbdAngle.toFixed(1) + '°';
-          document.getElementById('upperRightRot').innerText = 'Right Rotation: ' + rightRotAngle.toFixed(1) + '°';
-        }
-        // Baseball-specific metrics: shoulder & hip lines
         const leftHip = results.poseLandmarks[23];
         const rightHip = results.poseLandmarks[24];
+        
+        // Compute shoulder line angle
         if (leftShoulder && rightShoulder) {
           let shoulderLineRaw = computeLineAngle(leftShoulder, rightShoulder);
-          latestUpperMetrics.shoulderLineRaw = shoulderLineRaw;
+          latestShoulderLineRaw = shoulderLineRaw;
           let shoulderLineAdjusted = baselineShoulder !== null ? shoulderLineRaw - baselineShoulder : shoulderLineRaw;
-          document.getElementById('shoulderLine').innerText = 'Shoulder Line Angle: ' + shoulderLineAdjusted.toFixed(1) + '°';
-          shoulderLineData.push(shoulderLineAdjusted);
-        }
-        if (leftHip && rightHip) {
-          let hipLineRaw = computeLineAngle(leftHip, rightHip);
-          latestUpperMetrics.hipLineRaw = hipLineRaw;
-          let hipLineAdjusted = baselineHip !== null ? hipLineRaw - baselineHip : hipLineRaw;
-          document.getElementById('hipLine').innerText = 'Hip Line Angle: ' + hipLineAdjusted.toFixed(1) + '°';
-          hipLineData.push(hipLineAdjusted);
-          if (latestUpperMetrics.shoulderLineRaw !== null && latestUpperMetrics.hipLineRaw !== null) {
-            const separation = Math.abs((baselineShoulder !== null ? (latestUpperMetrics.shoulderLineRaw - baselineShoulder) : latestUpperMetrics.shoulderLineRaw) -
-                                         (baselineHip !== null ? (latestUpperMetrics.hipLineRaw - baselineHip) : latestUpperMetrics.hipLineRaw));
-            document.getElementById('hipShoulderSeparation').innerText = 'Hip-Shoulder Separation: ' + separation.toFixed(1) + '°';
-            hipShoulderSeparationData.push(separation);
-          }
-        }
-        // Log upper body data if recording
-        if (isRecordingUpper && leftFlexAngle !== null && leftAbdAngle !== null && leftRotAngle !== null &&
-            rightFlexAngle !== null && rightAbdAngle !== null && rightRotAngle !== null) {
-          const currentTime = ((Date.now() - startTimeUpper) / 1000).toFixed(2);
-          timeLabelsUpper.push(currentTime);
-          upperLeftFlexData.push(leftFlexAngle);
-          upperLeftAbdData.push(leftAbdAngle);
-          upperLeftRotData.push(leftRotAngle);
-          upperRightFlexData.push(rightFlexAngle);
-          upperRightAbdData.push(rightAbdAngle);
-          upperRightRotData.push(rightRotAngle);
-          if (timeLabelsUpper.length > maxDataPoints) {
-            timeLabelsUpper.shift();
-            upperLeftFlexData.shift();
-            upperLeftAbdData.shift();
-            upperLeftRotData.shift();
-            upperRightFlexData.shift();
-            upperRightAbdData.shift();
-            upperRightRotData.shift();
-            shoulderLineData.shift();
-            hipLineData.shift();
-            hipShoulderSeparationData.shift();
-          }
+          // Clamp the absolute value to 90°
+          let clampedShoulder = Math.min(Math.abs(shoulderLineAdjusted), 90);
+          shoulderLineDiv.innerText = "Shoulder Line Angle: " + clampedShoulder.toFixed(1) + "°";
         }
         
-        // --- Lower Body Calculations ---
-        const leftKnee = results.poseLandmarks[25];
-        const leftAnkle = results.poseLandmarks[27];
-        let leftKneeAngle = null;
-        if (leftHip && leftKnee && leftAnkle) {
-          leftKneeAngle = calculateAngle(leftHip, leftKnee, leftAnkle);
-          document.getElementById('lowerLeftKnee').innerText = 'Left Knee: ' + leftKneeAngle.toFixed(1) + '°';
+        // Compute hip line angle
+        if (leftHip && rightHip) {
+          let hipLineRaw = computeLineAngle(leftHip, rightHip);
+          latestHipLineRaw = hipLineRaw;
+          let hipLineAdjusted = baselineHip !== null ? hipLineRaw - baselineHip : hipLineRaw;
+          hipLineDiv.innerText = "Hip Line Angle: " + hipLineAdjusted.toFixed(1) + "°";
         }
-        const leftFootIndex = results.poseLandmarks[31];
-        let leftAnkleAngle = null;
-        if (leftKnee && leftAnkle && leftFootIndex) {
-          leftAnkleAngle = calculateAngle(leftKnee, leftAnkle, leftFootIndex);
-          document.getElementById('lowerLeftAnkle').innerText = 'Left Ankle: ' + leftAnkleAngle.toFixed(1) + '°';
-        }
-        const rightKnee = results.poseLandmarks[26];
-        const rightAnkle = results.poseLandmarks[28];
-        let rightKneeAngle = null;
-        if (rightHip && rightKnee && rightAnkle) {
-          rightKneeAngle = calculateAngle(rightHip, rightKnee, rightAnkle);
-          document.getElementById('lowerRightKnee').innerText = 'Right Knee: ' + rightKneeAngle.toFixed(1) + '°';
-        }
-        const rightFootIndex = results.poseLandmarks[32];
-        let rightAnkleAngle = null;
-        if (rightKnee && rightAnkle && rightFootIndex) {
-          rightAnkleAngle = calculateAngle(rightKnee, rightAnkle, rightFootIndex);
-          document.getElementById('lowerRightAnkle').innerText = 'Right Ankle: ' + rightAnkleAngle.toFixed(1) + '°';
-        }
-        // Log lower body data if recording
-        if (isRecordingLower && leftKneeAngle !== null && leftAnkleAngle !== null &&
-            rightKneeAngle !== null && rightAnkleAngle !== null) {
-          const currentTime = ((Date.now() - startTimeLower) / 1000).toFixed(2);
-          timeLabelsLower.push(currentTime);
-          lowerLeftKneeData.push(leftKneeAngle);
-          lowerLeftAnkleData.push(leftAnkleAngle);
-          lowerRightKneeData.push(rightKneeAngle);
-          lowerRightAnkleData.push(rightAnkleAngle);
-          if (timeLabelsLower.length > maxDataPoints) {
-            timeLabelsLower.shift();
-            lowerLeftKneeData.shift();
-            lowerLeftAnkleData.shift();
-            lowerRightKneeData.shift();
-            lowerRightAnkleData.shift();
-          }
+        
+        // Compute hip-shoulder separation as the absolute difference between the adjusted shoulder and hip angles
+        if (latestShoulderLineRaw !== null && latestHipLineRaw !== null) {
+          let shoulderAdjusted = baselineShoulder !== null ? latestShoulderLineRaw - baselineShoulder : latestShoulderLineRaw;
+          let hipAdjusted = baselineHip !== null ? latestHipLineRaw - baselineHip : latestHipLineRaw;
+          let separation = Math.abs(shoulderAdjusted - hipAdjusted);
+          hipShoulderSeparationDiv.innerText = "Hip-Shoulder Separation: " + separation.toFixed(1) + "°";
         }
       }
+      
       canvasCtx.restore();
-    });
+    }
     
-    // --- Chart Updates via Intervals ---
-    setInterval(() => { chartUpper.update(); }, 500);
-    setInterval(() => { chartLower.update(); }, 500);
+    // Calibration: record the current raw shoulder and hip line angles as the baseline
+    calibrateBtn.addEventListener('click', () => {
+      if (latestShoulderLineRaw !== null && latestHipLineRaw !== null) {
+        baselineShoulder = latestShoulderLineRaw;
+        baselineHip = latestHipLineRaw;
+        alert("Calibration complete. Baseline recorded.");
+      } else {
+        alert("Calibration failed. Ensure your shoulders and hips are visible.");
+      }
+    });
   </script>
 </body>
 </html>
+
