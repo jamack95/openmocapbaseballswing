@@ -95,6 +95,10 @@
       <div id="hipLine">Hip Line Angle: --°</div>
       <div id="hipShoulderSeparation">Hip-Shoulder Separation: --°</div>
     </div>
+    <div class="controls">
+      <!-- Added calibration button -->
+      <button id="calibrate">Calibrate Baseline</button>
+    </div>
     <div class="chartContainer">
       <canvas id="chartCanvasUpper" width="640" height="300"></canvas>
     </div>
@@ -132,6 +136,10 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   
   <script>
+    // --- Global Calibration Baseline Variables ---
+    let baselineShoulder = null;
+    let baselineHip = null;
+    
     // --- Tab Switching ---
     const upperSection = document.getElementById('upperSection');
     const lowerSection = document.getElementById('lowerSection');
@@ -185,7 +193,7 @@
     
     function drawLandmarks(landmarks) {
       landmarks.forEach((landmark, index) => {
-        if (index < 11) return; // Skip face landmarks (indexes 0-10)
+        if (index < 11) return; // Skip face landmarks
         const x = landmark.x * canvasElement.width;
         const y = landmark.y * canvasElement.height;
         canvasCtx.beginPath();
@@ -194,6 +202,19 @@
         canvasCtx.fill();
       });
     }
+    
+    // --- Calibration Button ---
+    document.getElementById('calibrate').addEventListener('click', () => {
+      // When calibration is triggered, store the current shoulder and hip line angles as baseline
+      // We'll assume that the hitter is front-facing at this moment.
+      if (latestUpperMetrics.shoulderLine !== null && latestUpperMetrics.hipLine !== null) {
+        baselineShoulder = latestUpperMetrics.shoulderLineRaw;
+        baselineHip = latestUpperMetrics.hipLineRaw;
+        alert("Calibration complete. Front-facing baseline recorded.");
+      } else {
+        alert("Unable to calibrate. Please ensure the hitter is visible and front-facing.");
+      }
+    });
     
     // --- Data Logging & Chart Setup for Upper Body ---
     let timeLabelsUpper = [];
@@ -420,10 +441,19 @@
       a.click();
     });
     
+    // --- Variables to store latest uncalibrated metrics for calibration ---
+    let latestUpperMetrics = {
+      shoulderLineRaw: null,
+      hipLineRaw: null,
+      shoulderLine: null,
+      hipLine: null
+    };
+    
     // --- onResults Callback ---
     pose.onResults((results) => {
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      // Draw mirrored image because of CSS transform
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
       if (results.poseLandmarks) {
         drawLandmarks(results.poseLandmarks);
@@ -459,105 +489,7 @@
           document.getElementById('upperRightAbd').innerText = 'Right Abduction: ' + rightAbdAngle.toFixed(1) + '°';
           document.getElementById('upperRightRot').innerText = 'Right Rotation: ' + rightRotAngle.toFixed(1) + '°';
         }
-        // Baseball-specific metrics
+        // Baseball-specific metrics: shoulder & hip lines
         const leftHip = results.poseLandmarks[23];
         const rightHip = results.poseLandmarks[24];
-        if (leftShoulder && rightShoulder) {
-          const shoulderLineAngle = computeLineAngle(leftShoulder, rightShoulder);
-          document.getElementById('shoulderLine').innerText = 'Shoulder Line Angle: ' + shoulderLineAngle.toFixed(1) + '°';
-          shoulderLineData.push(shoulderLineAngle);
-        }
-        if (leftHip && rightHip) {
-          const hipLineAngle = computeLineAngle(leftHip, rightHip);
-          document.getElementById('hipLine').innerText = 'Hip Line Angle: ' + hipLineAngle.toFixed(1) + '°';
-          hipLineData.push(hipLineAngle);
-          if (leftShoulder && rightShoulder) {
-            const separation = Math.abs(computeLineAngle(leftShoulder, rightShoulder) - hipLineAngle);
-            document.getElementById('hipShoulderSeparation').innerText = 'Hip-Shoulder Separation: ' + separation.toFixed(1) + '°';
-            hipShoulderSeparationData.push(separation);
-          }
-        }
-        // Log upper body data if recording
-        if (isRecordingUpper && leftFlexAngle !== null && leftAbdAngle !== null && leftRotAngle !== null &&
-            rightFlexAngle !== null && rightAbdAngle !== null && rightRotAngle !== null) {
-          const currentTime = ((Date.now() - startTimeUpper) / 1000).toFixed(2);
-          timeLabelsUpper.push(currentTime);
-          upperLeftFlexData.push(leftFlexAngle);
-          upperLeftAbdData.push(leftAbdAngle);
-          upperLeftRotData.push(leftRotAngle);
-          upperRightFlexData.push(rightFlexAngle);
-          upperRightAbdData.push(rightAbdAngle);
-          upperRightRotData.push(rightRotAngle);
-          if (timeLabelsUpper.length > maxDataPoints) {
-            timeLabelsUpper.shift();
-            upperLeftFlexData.shift();
-            upperLeftAbdData.shift();
-            upperLeftRotData.shift();
-            upperRightFlexData.shift();
-            upperRightAbdData.shift();
-            upperRightRotData.shift();
-            shoulderLineData.shift();
-            hipLineData.shift();
-            hipShoulderSeparationData.shift();
-          }
-          if (Date.now() - lastChartUpdateUpper > 500) {
-            chartUpper.update();
-            lastChartUpdateUpper = Date.now();
-          }
-        }
-        
-        // --- Lower Body Calculations ---
-        const leftKnee = results.poseLandmarks[25];
-        const leftAnkle = results.poseLandmarks[27];
-        let leftKneeAngle = null;
-        if (leftHip && leftKnee && leftAnkle) {
-          leftKneeAngle = calculateAngle(leftHip, leftKnee, leftAnkle);
-          document.getElementById('lowerLeftKnee').innerText = 'Left Knee: ' + leftKneeAngle.toFixed(1) + '°';
-        }
-        const leftFootIndex = results.poseLandmarks[31];
-        let leftAnkleAngle = null;
-        if (leftKnee && leftAnkle && leftFootIndex) {
-          leftAnkleAngle = calculateAngle(leftKnee, leftAnkle, leftFootIndex);
-          document.getElementById('lowerLeftAnkle').innerText = 'Left Ankle: ' + leftAnkleAngle.toFixed(1) + '°';
-        }
-        const rightKnee = results.poseLandmarks[26];
-        const rightAnkle = results.poseLandmarks[28];
-        let rightKneeAngle = null;
-        if (rightHip && rightKnee && rightAnkle) {
-          rightKneeAngle = calculateAngle(rightHip, rightKnee, rightAnkle);
-          document.getElementById('lowerRightKnee').innerText = 'Right Knee: ' + rightKneeAngle.toFixed(1) + '°';
-        }
-        const rightFootIndex = results.poseLandmarks[32];
-        let rightAnkleAngle = null;
-        if (rightKnee && rightAnkle && rightFootIndex) {
-          rightAnkleAngle = calculateAngle(rightKnee, rightAnkle, rightFootIndex);
-          document.getElementById('lowerRightAnkle').innerText = 'Right Ankle: ' + rightAnkleAngle.toFixed(1) + '°';
-        }
-        // Log lower body data if recording
-        if (isRecordingLower && leftKneeAngle !== null && leftAnkleAngle !== null &&
-            rightKneeAngle !== null && rightAnkleAngle !== null) {
-          const currentTime = ((Date.now() - startTimeLower) / 1000).toFixed(2);
-          timeLabelsLower.push(currentTime);
-          lowerLeftKneeData.push(leftKneeAngle);
-          lowerLeftAnkleData.push(leftAnkleAngle);
-          lowerRightKneeData.push(rightKneeAngle);
-          lowerRightAnkleData.push(rightAnkleAngle);
-          if (timeLabelsLower.length > maxDataPoints) {
-            timeLabelsLower.shift();
-            lowerLeftKneeData.shift();
-            lowerLeftAnkleData.shift();
-            lowerRightKneeData.shift();
-            lowerRightAnkleData.shift();
-          }
-          if (Date.now() - lastChartUpdateLower > 500) {
-            chartLower.update();
-            lastChartUpdateLower = Date.now();
-          }
-        }
-      }
-      canvasCtx.restore();
-    });
-  </script>
-</body>
-</html>
-
+       
