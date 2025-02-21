@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Simple Baseball Swing Metrics</title>
+  <title>OpenMoCap with Bat Tracking</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -20,7 +20,7 @@
     #input_video {
       display: none;
     }
-    /* Canvas displays the annotated (mirrored) output */
+    /* The canvas displays the mirrored output (including pose & bat tracking) */
     #output_canvas {
       width: 640px;
       height: 480px;
@@ -34,57 +34,36 @@
       font-size: 20px;
       margin-top: 20px;
     }
-    .metrics div {
-      margin: 10px 0;
-    }
-    button {
-      padding: 10px 15px;
-      font-size: 16px;
-      margin: 10px;
-    }
   </style>
 </head>
 <body>
-  <h1>Simple Baseball Swing Metrics</h1>
+  <h1>OpenMoCap with Bat Tracking</h1>
+  
   <div id="videoContainer">
     <video id="input_video" autoplay playsinline></video>
     <canvas id="output_canvas"></canvas>
   </div>
-  <div class="metrics">
-    <div id="shoulderLine">Shoulder Line Angle: --°</div>
-    <div id="hipLine">Hip Line Angle: --°</div>
-    <div id="hipShoulderSeparation">Hip-Shoulder Separation: --°</div>
-  </div>
-  <button id="calibrate">Calibrate Baseline</button>
   
-  <!-- External Libraries -->
+  <div class="metrics">
+    <!-- You can add other mocap metrics here as needed -->
+    <div id="batStatus">Bat: Not detected</div>
+  </div>
+  
+  <!-- Include MediaPipe Pose libraries -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <!-- Include TensorFlow.js and COCO-SSD -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   
   <script>
-    // Global baseline variables for calibration
-    let baselineShoulder = null;
-    let baselineHip = null;
-    
-    // Latest raw values (after smoothing) for current frame (for calibration)
-    let latestShoulderLineSmoothed = null;
-    let latestHipLineSmoothed = null;
-    
-    // Smoothing variables (exponential moving average)
-    let smoothedShoulderLine = null;
-    let smoothedHipLine = null;
-    const smoothingAlpha = 0.2; // Between 0 (no responsiveness) and 1 (no smoothing)
-    
-    // Get elements
+    // Set up elements and canvas context
     const videoElement = document.getElementById('input_video');
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
-    const shoulderLineDiv = document.getElementById('shoulderLine');
-    const hipLineDiv = document.getElementById('hipLine');
-    const hipShoulderSeparationDiv = document.getElementById('hipShoulderSeparation');
-    const calibrateBtn = document.getElementById('calibrate');
+    const batStatusDiv = document.getElementById('batStatus');
     
-    // Set up MediaPipe Pose
+    // Set up MediaPipe Pose (for other tracking, if needed)
     const pose = new Pose({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
     });
@@ -94,9 +73,10 @@
       minDetectionConfidence: 0.5,
       minTrackingConfidence: 0.5
     });
+    // We use onResults to draw the pose on the canvas
     pose.onResults(onResults);
     
-    // Start the camera using MediaPipe Camera Utils
+    // Start the camera using MediaPipe's Camera Utils
     const camera = new Camera(videoElement, {
       onFrame: async () => { await pose.send({ image: videoElement }); },
       width: 640,
@@ -104,91 +84,55 @@
     });
     camera.start();
     
-    // Utility: compute the line angle (in degrees) relative to horizontal
-    function computeLineAngle(A, B) {
-      return Math.atan2(B.y - A.y, B.x - A.x) * (180 / Math.PI);
-    }
-    
-    // Optional: draw small red dots for landmarks (skipping face landmarks)
-    function drawLandmarks(landmarks) {
-      landmarks.forEach((landmark, index) => {
-        if (index < 11) return;
-        const x = landmark.x * canvasElement.width;
-        const y = landmark.y * canvasElement.height;
-        canvasCtx.beginPath();
-        canvasCtx.arc(x, y, 2, 0, 2 * Math.PI);
-        canvasCtx.fillStyle = 'red';
-        canvasCtx.fill();
-      });
-    }
-    
-    // onResults callback: compute and display shoulder and hip line metrics
+    // onResults: simply draw the image (and optionally pose landmarks)
     function onResults(results) {
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      // Draw the mirrored image (CSS already mirrors the canvas)
       canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-      
-      if (results.poseLandmarks) {
-        drawLandmarks(results.poseLandmarks);
-        
-        // Extract shoulder and hip landmarks
-        const leftShoulder = results.poseLandmarks[11];
-        const rightShoulder = results.poseLandmarks[12];
-        const leftHip = results.poseLandmarks[23];
-        const rightHip = results.poseLandmarks[24];
-        
-        // Compute shoulder line angle
-        if (leftShoulder && rightShoulder) {
-          let shoulderLineRaw = computeLineAngle(leftShoulder, rightShoulder);
-          // Apply smoothing
-          if (smoothedShoulderLine === null) {
-            smoothedShoulderLine = shoulderLineRaw;
-          } else {
-            smoothedShoulderLine = smoothingAlpha * shoulderLineRaw + (1 - smoothingAlpha) * smoothedShoulderLine;
-          }
-          latestShoulderLineSmoothed = smoothedShoulderLine;
-          let shoulderAdjusted = baselineShoulder !== null ? latestShoulderLineSmoothed - baselineShoulder : latestShoulderLineSmoothed;
-          // Clamp the absolute value to 90°
-          let clampedShoulder = Math.min(Math.abs(shoulderAdjusted), 90);
-          shoulderLineDiv.innerText = "Shoulder Line Angle: " + clampedShoulder.toFixed(1) + "°";
-        }
-        
-        // Compute hip line angle
-        if (leftHip && rightHip) {
-          let hipLineRaw = computeLineAngle(leftHip, rightHip);
-          if (smoothedHipLine === null) {
-            smoothedHipLine = hipLineRaw;
-          } else {
-            smoothedHipLine = smoothingAlpha * hipLineRaw + (1 - smoothingAlpha) * smoothedHipLine;
-          }
-          latestHipLineSmoothed = smoothedHipLine;
-          let hipAdjusted = baselineHip !== null ? latestHipLineSmoothed - baselineHip : latestHipLineSmoothed;
-          let clampedHip = Math.min(Math.abs(hipAdjusted), 90);
-          hipLineDiv.innerText = "Hip Line Angle: " + clampedHip.toFixed(1) + "°";
-        }
-        
-        // Compute hip-shoulder separation (absolute difference between adjusted angles)
-        if (latestShoulderLineSmoothed !== null && latestHipLineSmoothed !== null) {
-          let shoulderAdjusted = baselineShoulder !== null ? latestShoulderLineSmoothed - baselineShoulder : latestShoulderLineSmoothed;
-          let hipAdjusted = baselineHip !== null ? latestHipLineSmoothed - baselineHip : latestHipLineSmoothed;
-          let separation = Math.abs(shoulderAdjusted - hipAdjusted);
-          hipShoulderSeparationDiv.innerText = "Hip-Shoulder Separation: " + separation.toFixed(1) + "°";
-        }
-      }
-      
+      // (Optional) Draw pose landmarks here if desired.
       canvasCtx.restore();
     }
     
-    // Calibration: record the current raw smoothed shoulder and hip line angles as baseline
-    calibrateBtn.addEventListener('click', () => {
-      if (latestShoulderLineSmoothed !== null && latestHipLineSmoothed !== null) {
-        baselineShoulder = latestShoulderLineSmoothed;
-        baselineHip = latestHipLineSmoothed;
-        alert("Calibration complete. Baseline recorded for shoulders and hips.");
-      } else {
-        alert("Calibration failed. Ensure your shoulders and hips are visible.");
-      }
+    // --- Bat Tracking with COCO-SSD ---
+    let batModel = null;
+    
+    // Load the COCO-SSD model
+    cocoSsd.load().then(model => {
+      batModel = model;
+      console.log("Bat detection model loaded.");
+      // Start detection every 1000 ms (adjust as needed)
+      setInterval(detectBat, 1000);
     });
+    
+    // detectBat runs COCO-SSD on the current canvas image.
+    function detectBat() {
+      if (!batModel) return;
+      // Run detection on the canvas element (which contains the mirrored video)
+      batModel.detect(canvasElement).then(predictions => {
+        // Clear previous bat overlay (we redraw on top of the existing canvas image)
+        // Here, we simply overlay new bat boxes on top of the image.
+        predictions.forEach(prediction => {
+          if (prediction.class === "baseball bat" && prediction.score > 0.5) {
+            // Draw bounding box
+            canvasCtx.strokeStyle = "yellow";
+            canvasCtx.lineWidth = 4;
+            canvasCtx.strokeRect(prediction.bbox[0], prediction.bbox[1], prediction.bbox[2], prediction.bbox[3]);
+            // Draw label
+            canvasCtx.fillStyle = "yellow";
+            canvasCtx.font = "18px Arial";
+            canvasCtx.fillText(prediction.class + " " + (prediction.score * 100).toFixed(1) + "%", 
+              prediction.bbox[0], 
+              (prediction.bbox[1] > 20 ? prediction.bbox[1] - 5 : 10));
+            batStatusDiv.innerText = "Bat: Detected";
+          } else {
+            batStatusDiv.innerText = "Bat: Not detected";
+          }
+        });
+      }).catch(err => {
+        console.error("Error during bat detection:", err);
+      });
+    }
   </script>
 </body>
 </html>
