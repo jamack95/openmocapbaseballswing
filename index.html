@@ -66,9 +66,14 @@
     let baselineShoulder = null;
     let baselineHip = null;
     
-    // Latest raw values for current frame (for calibration)
-    let latestShoulderLineRaw = null;
-    let latestHipLineRaw = null;
+    // Latest raw values (after smoothing) for current frame (for calibration)
+    let latestShoulderLineSmoothed = null;
+    let latestHipLineSmoothed = null;
+    
+    // Smoothing variables
+    let smoothedShoulderLine = null;
+    let smoothedHipLine = null;
+    const smoothingAlpha = 0.2; // Adjust between 0 (no responsiveness) and 1 (no smoothing)
     
     // Get elements
     const videoElement = document.getElementById('input_video');
@@ -117,7 +122,7 @@
       });
     }
     
-    // onResults callback: compute and display metrics
+    // onResults callback: compute and display shoulder and hip line metrics
     function onResults(results) {
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
@@ -132,28 +137,47 @@
         const leftHip = results.poseLandmarks[23];
         const rightHip = results.poseLandmarks[24];
         
-        // Compute shoulder line angle
+        // Compute raw shoulder line angle
         if (leftShoulder && rightShoulder) {
-          let shoulderLineRaw = computeLineAngle(leftShoulder, rightShoulder);
-          latestShoulderLineRaw = shoulderLineRaw;
-          let shoulderLineAdjusted = baselineShoulder !== null ? shoulderLineRaw - baselineShoulder : shoulderLineRaw;
-          // Clamp the absolute value to 90°
-          let clampedShoulder = Math.min(Math.abs(shoulderLineAdjusted), 90);
+          const shoulderLineRaw = computeLineAngle(leftShoulder, rightShoulder);
+          // Smooth the measurement
+          if (smoothedShoulderLine === null) {
+            smoothedShoulderLine = shoulderLineRaw;
+          } else {
+            smoothedShoulderLine = smoothingAlpha * shoulderLineRaw + (1 - smoothingAlpha) * smoothedShoulderLine;
+          }
+          latestShoulderLineSmoothed = smoothedShoulderLine;
+        }
+        
+        // Compute raw hip line angle
+        if (leftHip && rightHip) {
+          const hipLineRaw = computeLineAngle(leftHip, rightHip);
+          // Smooth the measurement
+          if (smoothedHipLine === null) {
+            smoothedHipLine = hipLineRaw;
+          } else {
+            smoothedHipLine = smoothingAlpha * hipLineRaw + (1 - smoothingAlpha) * smoothedHipLine;
+          }
+          latestHipLineSmoothed = smoothedHipLine;
+        }
+        
+        // Display adjusted shoulder line angle (clamped to 90°)
+        if (latestShoulderLineSmoothed !== null) {
+          let shoulderAdjusted = baselineShoulder !== null ? latestShoulderLineSmoothed - baselineShoulder : latestShoulderLineSmoothed;
+          let clampedShoulder = Math.min(Math.abs(shoulderAdjusted), 90);
           shoulderLineDiv.innerText = "Shoulder Line Angle: " + clampedShoulder.toFixed(1) + "°";
         }
         
-        // Compute hip line angle
-        if (leftHip && rightHip) {
-          let hipLineRaw = computeLineAngle(leftHip, rightHip);
-          latestHipLineRaw = hipLineRaw;
-          let hipLineAdjusted = baselineHip !== null ? hipLineRaw - baselineHip : hipLineRaw;
-          hipLineDiv.innerText = "Hip Line Angle: " + hipLineAdjusted.toFixed(1) + "°";
+        // Display adjusted hip line angle
+        if (latestHipLineSmoothed !== null) {
+          let hipAdjusted = baselineHip !== null ? latestHipLineSmoothed - baselineHip : latestHipLineSmoothed;
+          hipLineDiv.innerText = "Hip Line Angle: " + hipAdjusted.toFixed(1) + "°";
         }
         
-        // Compute hip-shoulder separation as the absolute difference between the adjusted shoulder and hip angles
-        if (latestShoulderLineRaw !== null && latestHipLineRaw !== null) {
-          let shoulderAdjusted = baselineShoulder !== null ? latestShoulderLineRaw - baselineShoulder : latestShoulderLineRaw;
-          let hipAdjusted = baselineHip !== null ? latestHipLineRaw - baselineHip : latestHipLineRaw;
+        // Compute hip-shoulder separation (absolute difference between adjusted angles)
+        if (latestShoulderLineSmoothed !== null && latestHipLineSmoothed !== null) {
+          let shoulderAdjusted = baselineShoulder !== null ? latestShoulderLineSmoothed - baselineShoulder : latestShoulderLineSmoothed;
+          let hipAdjusted = baselineHip !== null ? latestHipLineSmoothed - baselineHip : latestHipLineSmoothed;
           let separation = Math.abs(shoulderAdjusted - hipAdjusted);
           hipShoulderSeparationDiv.innerText = "Hip-Shoulder Separation: " + separation.toFixed(1) + "°";
         }
@@ -162,12 +186,12 @@
       canvasCtx.restore();
     }
     
-    // Calibration: record the current raw shoulder and hip line angles as the baseline
+    // Calibration: store the current raw smoothed values as baseline
     calibrateBtn.addEventListener('click', () => {
-      if (latestShoulderLineRaw !== null && latestHipLineRaw !== null) {
-        baselineShoulder = latestShoulderLineRaw;
-        baselineHip = latestHipLineRaw;
-        alert("Calibration complete. Baseline recorded.");
+      if (latestShoulderLineSmoothed !== null && latestHipLineSmoothed !== null) {
+        baselineShoulder = latestShoulderLineSmoothed;
+        baselineHip = latestHipLineSmoothed;
+        alert("Calibration complete. Baseline recorded for shoulders and hips.");
       } else {
         alert("Calibration failed. Ensure your shoulders and hips are visible.");
       }
