@@ -70,10 +70,10 @@
     let latestShoulderLineSmoothed = null;
     let latestHipLineSmoothed = null;
     
-    // Smoothing variables
+    // Smoothing variables (exponential moving average)
     let smoothedShoulderLine = null;
     let smoothedHipLine = null;
-    const smoothingAlpha = 0.2; // Adjust between 0 (no responsiveness) and 1 (no smoothing)
+    const smoothingAlpha = 0.2; // Between 0 (no responsiveness) and 1 (no smoothing)
     
     // Get elements
     const videoElement = document.getElementById('input_video');
@@ -104,12 +104,12 @@
     });
     camera.start();
     
-    // Utility: Compute the line angle (in degrees) relative to horizontal
+    // Utility: compute the line angle (in degrees) relative to horizontal
     function computeLineAngle(A, B) {
       return Math.atan2(B.y - A.y, B.x - A.x) * (180 / Math.PI);
     }
     
-    // Optional: Draw small red dots for landmarks (skipping face landmarks)
+    // Optional: draw small red dots for landmarks (skipping face landmarks)
     function drawLandmarks(landmarks) {
       landmarks.forEach((landmark, index) => {
         if (index < 11) return;
@@ -137,41 +137,34 @@
         const leftHip = results.poseLandmarks[23];
         const rightHip = results.poseLandmarks[24];
         
-        // Compute raw shoulder line angle
+        // Compute shoulder line angle
         if (leftShoulder && rightShoulder) {
-          const shoulderLineRaw = computeLineAngle(leftShoulder, rightShoulder);
-          // Smooth the measurement
+          let shoulderLineRaw = computeLineAngle(leftShoulder, rightShoulder);
+          // Apply smoothing
           if (smoothedShoulderLine === null) {
             smoothedShoulderLine = shoulderLineRaw;
           } else {
             smoothedShoulderLine = smoothingAlpha * shoulderLineRaw + (1 - smoothingAlpha) * smoothedShoulderLine;
           }
           latestShoulderLineSmoothed = smoothedShoulderLine;
+          let shoulderAdjusted = baselineShoulder !== null ? latestShoulderLineSmoothed - baselineShoulder : latestShoulderLineSmoothed;
+          // Clamp the absolute value to 90°
+          let clampedShoulder = Math.min(Math.abs(shoulderAdjusted), 90);
+          shoulderLineDiv.innerText = "Shoulder Line Angle: " + clampedShoulder.toFixed(1) + "°";
         }
         
-        // Compute raw hip line angle
+        // Compute hip line angle
         if (leftHip && rightHip) {
-          const hipLineRaw = computeLineAngle(leftHip, rightHip);
-          // Smooth the measurement
+          let hipLineRaw = computeLineAngle(leftHip, rightHip);
           if (smoothedHipLine === null) {
             smoothedHipLine = hipLineRaw;
           } else {
             smoothedHipLine = smoothingAlpha * hipLineRaw + (1 - smoothingAlpha) * smoothedHipLine;
           }
           latestHipLineSmoothed = smoothedHipLine;
-        }
-        
-        // Display adjusted shoulder line angle (clamped to 90°)
-        if (latestShoulderLineSmoothed !== null) {
-          let shoulderAdjusted = baselineShoulder !== null ? latestShoulderLineSmoothed - baselineShoulder : latestShoulderLineSmoothed;
-          let clampedShoulder = Math.min(Math.abs(shoulderAdjusted), 90);
-          shoulderLineDiv.innerText = "Shoulder Line Angle: " + clampedShoulder.toFixed(1) + "°";
-        }
-        
-        // Display adjusted hip line angle
-        if (latestHipLineSmoothed !== null) {
           let hipAdjusted = baselineHip !== null ? latestHipLineSmoothed - baselineHip : latestHipLineSmoothed;
-          hipLineDiv.innerText = "Hip Line Angle: " + hipAdjusted.toFixed(1) + "°";
+          let clampedHip = Math.min(Math.abs(hipAdjusted), 90);
+          hipLineDiv.innerText = "Hip Line Angle: " + clampedHip.toFixed(1) + "°";
         }
         
         // Compute hip-shoulder separation (absolute difference between adjusted angles)
@@ -186,7 +179,7 @@
       canvasCtx.restore();
     }
     
-    // Calibration: store the current raw smoothed values as baseline
+    // Calibration: record the current raw smoothed shoulder and hip line angles as baseline
     calibrateBtn.addEventListener('click', () => {
       if (latestShoulderLineSmoothed !== null && latestHipLineSmoothed !== null) {
         baselineShoulder = latestShoulderLineSmoothed;
@@ -199,4 +192,3 @@
   </script>
 </body>
 </html>
-
